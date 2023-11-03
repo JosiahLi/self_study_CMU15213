@@ -71,7 +71,7 @@ static char *heap_listp; // point to the footer of prologue block
 /* coalesce blocks */
 static void *coalesce(void *bp)
 {
-    size_t prev_alloc = GET_ALLOC(HDRP(PREV_BLOCK(bp)));
+    size_t prev_alloc = GET_ALLOC(FTRP(PREV_BLOCK(bp)));
     size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLOCK(bp)));
     size_t size = GET_SIZE(HDRP(bp));
 
@@ -97,9 +97,12 @@ static void *coalesce(void *bp)
     else
     {
         size += GET_SIZE(HDRP(PREV_BLOCK(bp))) + GET_SIZE(FTRP(NEXT_BLOCK(bp)));
+        //bp = PREV_BLOCK(bp);
+        //PUT(HDRP(bp), PACK(size, 0));
+        //PUT(FTRP(bp), PACK(size, 0));
+        PUT(HDRP(PREV_BLOCK(bp)), PACK(size, 0));
+        PUT(FTRP(NEXT_BLOCK(bp)), PACK(size, 0));
         bp = PREV_BLOCK(bp);
-        PUT(HDRP(bp), PACK(size, 0));
-        PUT(FTRP(bp), PACK(size, 0));
     }
 
     return bp;
@@ -145,7 +148,7 @@ static void place(void* bp, size_t asize)
         bp = NEXT_BLOCK(bp); /* base pointer to new split free block */
         PUT(HDRP(bp) , PACK(size - asize, 0));
         PUT(FTRP(bp), PACK(size - asize, 0));
-        //coalesce(bp);
+        coalesce(bp);
     }
     else /* can not be split */
     {
@@ -170,9 +173,11 @@ int mm_init(void)
     PUT(heap_listp, 0); /* the firt word is padding */
     PUT(heap_listp + WSIZE, PACK(0x8, 1)); /* initialize the header of prologue */
     PUT(heap_listp + DSIZE, PACK(0x8, 1)); /* initialize the footer of prologue */
-    PUT(heap_listp + (3 * WSIZE), PACK(0x0, 1)); /* initialize epilgue */
+    PUT(heap_listp + (3 * WSIZE), PACK(0x0, 1)); /* initialize epilogue */
 
     heap_listp += DSIZE; /* let heap_listp point to the footer of prologue */
+
+    if (extend_heap(CHUNSIZE / WSIZE) == NULL) return -1;
 
     return 0;
 }
@@ -185,11 +190,11 @@ void *mm_malloc(size_t size)
 {
     size_t asize; /* aligned size */
     size_t extendsize; /* extended size if no fit */
-    char *bp = NULL;
+    char *bp;
 
     if (size == 0) return NULL;
     
-    if (size <= WSIZE) asize = DSIZE * 2; /* allocate a minimum block of 16 bytes */
+    if (size <= DSIZE) asize = DSIZE * 2; /* allocate a minimum block of 16 bytes */
     else asize = ALIGN(size + DSIZE); /* align the size NOTE: not forget to plus size for header and footer */
 
     if ((bp = find_fit(asize)) != NULL) place(bp, asize);
@@ -219,92 +224,17 @@ void mm_free(void *ptr)
  */
 void *mm_realloc(void *ptr, size_t size)
 {
-    void *oldptr = ptr;
     void *newptr;
-    size_t currsize, asize;
+    size_t copysize;
     
-    if (ptr == NULL) return mm_malloc(size);
-    if (!size)
-    {
-        mm_free(ptr);
-        return NULL;
-    }
-
-    currsize = GET_SIZE(HDRP(ptr));
-    asize = ALIGN(size + DSIZE);  
-    if (currsize == asize) return ptr;
-    else if (currsize > asize)
-    {
-        /* 
-            we don't need to any allocate new block,
-            so not need to copy any memory,
-            but we need to check whether the remaining can be split
-         */
-        //place(ptr, asize);
-        return ptr;
-    }
-    else /* In this case, we have to reallocate or coalesce */
-    {
-        size_t prevalloc, nextalloc;
-        size_t prevsize, nextsize;
-        char *prevbp, *nextbp;
-        prevbp = PREV_BLOCK(ptr), nextbp = NEXT_BLOCK(ptr);
-        prevalloc = GET_ALLOC(HDRP(prevbp));
-        nextalloc = GET_ALLOC(HDRP(nextbp));
-        prevsize = GET_SIZE(HDRP(prevbp));
-        nextsize = GET_SIZE(HDRP(nextbp));
-
-        if (!prevalloc && ((prevsize + currsize) >= asize))
-        {
-            /*
-            In this case, we can coalesce the current block with the previous one
-            */
-            //char *i, *j; /* used for copying data */
-            PUT(HDRP(prevbp), PACK(prevsize + currsize, 1));
-            PUT(FTRP(prevbp), PACK(prevsize + currsize, 1)); 
-            /* copy data, NOTE: there are overlapped area, if we used memcpy  */
-            //for (i = ptr, j = prevbp; i != FTRP(ptr); ++i, ++j)
-            //    *j = *i;
-            memcpy(prevbp, ptr, currsize - DSIZE);
-            /* check whether the coalesced block can be split */
-            //place(prevbp, prevsize + currsize);
-
-            return prevbp;
-        }
-        else if (!nextalloc && ((nextsize + currsize) >= asize))
-        {
-            /*  
-                In this case, we can coalesce the current block with the next one
-                NOTE: we don't need to copy any data
-            */
-             PUT(HDRP(ptr), PACK(nextsize + currsize, 1));
-             PUT(FTRP(ptr), PACK(prevsize + currsize, 1));
-
-             return ptr;
-        }
-        else if ((!prevalloc && !nextalloc) && ((prevsize + currsize + nextsize) >= asize))
-        {
-            /*
-                In this case, we can coalesce the current block with both adjacent blocks
-            */
-            //char *i, *j;
-            PUT(HDRP(prevbp), PACK(prevsize + currsize + nextsize, 1));
-            PUT(FTRP(prevbp), PACK(prevsize + currsize + nextsize, 1));
-            //for (i = ptr, j = prevbp; i != FTRP(ptr); ++i, ++j)
-            //    *j = *i;
-            memcpy(prevbp, ptr, currsize - DSIZE);
-            //place(prevbp, prevsize + currsize + nextsize); 
-            return prevbp;
-        }
-        else /* can not coalesce neither previous nor next block */
-        {
-            /* we must allocate a new block such that the specifie size can be allocated */
-            newptr = mm_malloc(size);
-            memcpy(newptr, oldptr, currsize - DSIZE);
-            mm_free(oldptr);
-            return newptr;
-        }
-    }
+    if((newptr = mm_malloc(size))==NULL)
+        return 0;
+    copysize = GET_SIZE(HDRP(ptr));
+    if(size < copysize)
+        copysize = size;
+    memcpy(newptr, ptr, copysize);
+    mm_free(ptr);
+    return newptr;
 }
 /*
     checker
