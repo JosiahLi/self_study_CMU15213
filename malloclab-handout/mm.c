@@ -224,15 +224,36 @@ void mm_free(void *ptr)
  */
 void *mm_realloc(void *ptr, size_t size)
 {
+    /*
     void *newptr;
     size_t copysize;
     
     if((newptr = mm_malloc(size))==NULL)
         return 0;
-    copysize = GET_SIZE(HDRP(ptr));
+    copysize = GET_SIZE(HDRP(ptr)) - DSIZE;
     if(size < copysize)
         copysize = size;
     memcpy(newptr, ptr, copysize);
+    mm_free(ptr);
+    return newptr;
+    */
+    void *newptr;
+    size_t csize, asize;
+
+    if (!ptr) return mm_malloc(size); 
+     
+    asize = ALIGN(size + DSIZE);
+    csize = GET_SIZE(HDRP(ptr));
+    if (asize == csize) 
+    {
+        //printf("asize == csize\tsize = %ld\n", size);
+        return ptr;
+    }
+    else if (asize < csize) return ptr;
+
+    if ((newptr = mm_malloc(size)) == NULL) return NULL;
+    //printf("asize = %d, csize = %d, size = %d, newsize = %d\n", asize, csize, size, GET_SIZE(HDRP(newptr)));
+    memcpy(newptr, ptr, csize);
     mm_free(ptr);
     return newptr;
 }
