@@ -1,0 +1,1 @@
+mm_malloc should return an 8-byte aligned pointer.

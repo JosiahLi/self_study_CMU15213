@@ -1,0 +1,59 @@
+./sdriver.pl -t trace15.txt -s ./tsh -a "-p"
+#
+# trace15.txt - Putting it all together
+#
+tsh> ./bogus
+./bogus: Command not found.
+tsh> ./myspin 10
+Job [1] (37274) terminated by signal 2
+tsh> ./myspin 3 &
+[1] (37291) ./myspin 3 &
+tsh> ./myspin 4 &
+[2] (37293) ./myspin 4 &
+tsh> jobs
+[1] (37291) Running ./myspin 3 &
+[2] (37293) Running ./myspin 4 &
+tsh> fg %1
+Job [1] (37291) terminated by signal 20
+tsh> jobs
+[1] (37291) Stopped ./myspin 3 &
+[2] (37293) Running ./myspin 4 &
+tsh> bg %3
+%3: No such job
+tsh> bg %1
+[1] (37291) ./myspin 3 &
+tsh> jobs
+[1] (37291) Running ./myspin 3 &
+[2] (37293) Running ./myspin 4 &
+tsh> fg %1
+tsh> quit
+--------------------------------------------------------------
+./sdriver.pl -t trace15.txt -s ./tshref -a "-p"
+#
+# trace15.txt - Putting it all together
+#
+tsh> ./bogus
+./bogus: Command not found
+tsh> ./myspin 10
+Job [1] (37355) terminated by signal 2
+tsh> ./myspin 3 &
+[1] (37357) ./myspin 3 &
+tsh> ./myspin 4 &
+[2] (37359) ./myspin 4 &
+tsh> jobs
+[1] (37357) Running ./myspin 3 &
+[2] (37359) Running ./myspin 4 &
+tsh> fg %1
+Job [1] (37357) stopped by signal 20
+tsh> jobs
+[1] (37357) Stopped ./myspin 3 &
+[2] (37359) Running ./myspin 4 &
+tsh> bg %3
+%3: No such job
+tsh> bg %1
+[1] (37357) ./myspin 3 &
+tsh> jobs
+[1] (37357) Running ./myspin 3 &
+[2] (37359) Running ./myspin 4 &
+tsh> fg %1
+tsh> quit
