@@ -39,11 +39,32 @@ team_t team = {
 #define ALIGNMENT 8
 
 /* rounds up to the nearest multiple of ALIGNMENT */
+/* (x & ~0x7) is equiavalent to [x / 8]*/
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
 
 
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
+/*************************************************************/
+/* Below are private global rariables for implicit free list*/
+static char *heap_listp; // point to the footer of prologue block
+/* Below are macros for implicit free list*/
+#define WSIZE 4
+#define DSIZE 8
+#define CHUNSIZE (1 << 12) // Extend heap by this amount equivalen to PAGE size
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define PACK(size, alloc) ((size) | (alloc))
+#define GET(p) (*(unsigned int *)(p)) // get the first word to which p points to
+#define PUT(p, val) (*(unsigned int *)(p) = (val))
+#define GET_SIZE(p) (GET(p) & ~0x7) // p must point to either header or footer
+#define GET_ALLOC(p) (GET(p) & 0x1)
+/* bp is a pointer to payload of the current block*/
+#define HDRP(bp) ((char *)(bp) - WSIZE)
+#define FTRO(bp) ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE)
+/* get the bp pointer of the next or previous block*/
+#define NEXT_BLOCK(bp) ((char *)(bp) + GET_SIZE(HDRP(p)))
+#define PREV_BLOCK(bp) ((char *)(bp) - GET_SIZE((char *)(bp) - DSIZE))
+/*************************************************************/
 /* 
  * mm_init - initialize the malloc package.
  */
@@ -97,7 +118,7 @@ void *mm_realloc(void *ptr, size_t size)
 /*
     checker
 */
-int mm_check(void)
+int mm_checker(void)
 {
 
 }
