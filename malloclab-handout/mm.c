@@ -189,7 +189,7 @@ void *mm_malloc(size_t size)
 
     if (size == 0) return NULL;
     
-    if (size <= WSIZE) asize = DSIZE * 2; /* allocate a minimum block of 16 bytes */
+    if (size <= DSIZE) asize = DSIZE * 2; /* allocate a minimum block of 16 bytes */
     else asize = ALIGN(size + DSIZE); /* align the size NOTE: not forget to plus size for header and footer */
 
     if ((bp = find_fit(asize)) != NULL) place(bp, asize);
