@@ -232,6 +232,8 @@ void *mm_realloc(void *ptr, size_t size)
 
     currsize = GET_SIZE(HDRP(ptr));
     asize = ALIGN(size + DSIZE);  
+
+    //printf("size = %d, asize = %d, currsize = %d\n", size, asize, currsize);
     if (currsize == asize) return ptr;
     else if (currsize > asize)
     {
@@ -241,6 +243,7 @@ void *mm_realloc(void *ptr, size_t size)
             but we need to check whether the remaining can be split
          */
         //place(ptr, asize);
+        //puts("0");
         return ptr;
     }
     else /* In this case, we have to reallocate or coalesce */
@@ -256,6 +259,7 @@ void *mm_realloc(void *ptr, size_t size)
 
         if (!prevalloc && ((prevsize + currsize) >= asize))
         {
+            //puts("1");
             /*
             In this case, we can coalesce the current block with the previous one
             */
@@ -273,12 +277,13 @@ void *mm_realloc(void *ptr, size_t size)
         }
         else if (!nextalloc && ((nextsize + currsize) >= asize))
         {
+            //puts("2");
             /*  
                 In this case, we can coalesce the current block with the next one
                 NOTE: we don't need to copy any data
             */
              PUT(HDRP(ptr), PACK(nextsize + currsize, 1));
-             PUT(FTRP(ptr), PACK(prevsize + currsize, 1));
+             PUT(FTRP(ptr), PACK(nextsize + currsize, 1));
 
              return ptr;
         }
@@ -288,19 +293,22 @@ void *mm_realloc(void *ptr, size_t size)
                 In this case, we can coalesce the current block with both adjacent blocks
             */
             //char *i, *j;
+            //puts("3");
             PUT(HDRP(prevbp), PACK(prevsize + currsize + nextsize, 1));
             PUT(FTRP(prevbp), PACK(prevsize + currsize + nextsize, 1));
             //for (i = ptr, j = prevbp; i != FTRP(ptr); ++i, ++j)
-            //    *j = *i;
-            memcpy(prevbp, ptr, currsize - DSIZE);
+           //     *j = *i;
+           memcpy(prevbp, ptr, currsize - DSIZE);
+        
             //place(prevbp, prevsize + currsize + nextsize); 
             return prevbp;
         }
         else /* can not coalesce neither previous nor next block */
         {
+            //puts("4");
             /* we must allocate a new block such that the specifie size can be allocated */
             newptr = mm_malloc(size);
-            memcpy(newptr, oldptr, currsize - DSIZE);
+            memcpy(newptr, oldptr, currsize);
             mm_free(oldptr);
             return newptr;
         }
