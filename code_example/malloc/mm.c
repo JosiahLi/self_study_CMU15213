@@ -46,7 +46,7 @@
 
 /* Global variables */
 static char *heap_listp = 0;  /* Pointer to first block */  
-#ifdef NEXT_FIT
+#if NEXT_FIT
 static char *rover;           /* Next fit rover */
 #endif
 

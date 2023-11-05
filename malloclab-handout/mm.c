@@ -36,7 +36,8 @@ team_t team = {
 };
 
 /* find policy */
-#define NEXTFIT
+//#define NEXTFIT
+#define BESTFIT
 /* single word (4) or double word (8) alignment */
 #define ALIGNMENT 8
 
@@ -133,7 +134,7 @@ static void *extend_heap(size_t words)
 static void *find_fit(size_t size)
 {
     char *curr;
-#ifdef NEXTFIT
+#if defined(NEXTFIT)
     for (curr = rover; GET_SIZE(HDRP(curr)) != 0; curr = NEXT_BLOCK(curr))
         if (!GET_ALLOC(HDRP(curr)) && (GET_SIZE(HDRP(curr)) >= size))
         {
@@ -147,6 +148,19 @@ static void *find_fit(size_t size)
             rover = NEXT_BLOCK(curr);
             return curr;
         }
+#elif defined (BESTFIT)
+    char *best;
+     for (curr = best = heap_listp; GET_SIZE(HDRP(curr)) != 0; curr = NEXT_BLOCK(curr))
+        if (!GET_ALLOC(HDRP(curr)) && (GET_SIZE(HDRP(curr)) >= size))
+        {
+            if (GET_SIZE(HDRP(best)) < GET_SIZE(HDRP(curr)))
+            {
+                best = curr;
+            }
+        }
+
+    if (best == heap_listp) return NULL;
+    return best; 
 #else
     /* first hit */
     for (curr = heap_listp; GET_SIZE(HDRP(curr)) != 0; curr = NEXT_BLOCK(curr))
