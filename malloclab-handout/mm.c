@@ -51,6 +51,8 @@ team_t team = {
 /*************************************************************/
 /* Below are private global rariables for implicit free list*/
 static char *heap_listp; // point to the footer of prologue block
+static char *head;
+static char *tail;
 #ifdef NEXTFIT
 static char *rover;
 #endif
@@ -70,13 +72,42 @@ static char *rover;
 /* get the bp pointer of the next or previous block*/
 #define NEXT_BLOCK(bp) ((char *)(bp) + GET_SIZE(HDRP(bp)))
 #define PREV_BLOCK(bp) ((char *)(bp) - GET_SIZE((char *)(bp) - DSIZE))
+/* double linked list */
+#define PREV_NODE(bp) ((void*)*(unsigned int*)(bp))
+#define NEXT_NODE(bp) ((void*)*((unsigned int*)(bp) + 1))
+#define SET_PREV(bp, val) (*(unsigned int*)(bp) = (unsigned int)(val))
+#define SET_NEXT(bp, val) (*((unsigned int*)(bp) + 1) = (unsigned int)(val))
 /*************************************************************/
 
 /***********************************************************************/
 /* Here are some additional functions*/
+/*
+    insert a node at the beginning of the free list
+*/
+static void insert_node(char *curr)
+{
+    if (GET_ALLOC(HDRP(curr)))
+    {
+        printf("ERROR: insert a allocated block\n");
+    }
+    SET_PREV(curr, head);
+    SET_NEXT(curr, NEXT_NODE(head));
+
+    SET_NEXT(head, curr);
+    SET_PREV(NEXT_NODE(curr), curr);
+}
+/*
+    delete a node from the free list
+*/
+static void remove_node(char *curr)
+{
+    SET_NEXT(PREV_NODE(curr), NEXT_NODE(curr));
+    SET_PREV(NEXT_NODE(curr), PREV_NODE(curr));
+}
 /* coalesce blocks */
 static void *coalesce(void *bp)
 {
+    void *next_block = NEXT_BLOCK(bp);
     size_t prev_alloc = GET_ALLOC(HDRP(PREV_BLOCK(bp)));
     size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLOCK(bp)));
     size_t size = GET_SIZE(HDRP(bp));
@@ -84,6 +115,9 @@ static void *coalesce(void *bp)
     if (prev_alloc && next_alloc) return bp;
     else if (prev_alloc && !next_alloc)
     {
+        /* we need to delelte the next block from free list */
+        remove_node(next_block);
+
         size += GET_SIZE(HDRP(NEXT_BLOCK(bp)));
         PUT(HDRP(bp), PACK(size, 0));
         /*
@@ -92,9 +126,14 @@ static void *coalesce(void *bp)
             we can make use of FTRP to calculate the footer of the newly coalesced block 
         */
         PUT(FTRP(bp), PACK(size, 0)); 
+        /* NODE: we do NOT need to add bp to free list, since it is a free block */
+        // insert_node(bp);
     }
     else if (!prev_alloc && next_alloc)
     {
+        /* delete bp from free list */
+        remove_node(bp);
+
         size += GET_SIZE(HDRP(PREV_BLOCK(bp)));
         PUT(FTRP(bp), PACK(size, 0));
         PUT(HDRP(PREV_BLOCK(bp)), PACK(size, 0));
@@ -102,6 +141,8 @@ static void *coalesce(void *bp)
     }
     else
     {
+        remove_node(bp), remove_node(next_block);
+
         size += GET_SIZE(HDRP(PREV_BLOCK(bp))) + GET_SIZE(FTRP(NEXT_BLOCK(bp)));
         bp = PREV_BLOCK(bp);
         PUT(HDRP(bp), PACK(size, 0));
@@ -128,48 +169,22 @@ static void *extend_heap(size_t words)
     PUT(FTRP(bp), PACK(size, 0)); /* set the footer */
     PUT(HDRP(NEXT_BLOCK(bp)), PACK(0, 1)); /* update epilogue */
 
+    insert_node(bp);
+
     return coalesce(bp);
 }
 /* find an appropriate block that satisfies the block size */
 static void *find_fit(size_t size)
 {
-    char *curr;
-#if defined(NEXTFIT)
-    for (curr = rover; GET_SIZE(HDRP(curr)) != 0; curr = NEXT_BLOCK(curr))
-        if (!GET_ALLOC(HDRP(curr)) && (GET_SIZE(HDRP(curr)) >= size))
-        {
-            rover = NEXT_BLOCK(curr);
-            return curr;
-        }
+    void *curr = NEXT_NODE(head);
 
-    for (curr = heap_listp; curr != rover; curr = NEXT_BLOCK(curr))
-        if (!GET_ALLOC(HDRP(curr)) && (GET_SIZE(HDRP(curr)) >= size))
-        {
-            rover = NEXT_BLOCK(curr);
-            return curr;
-        }
-#elif defined (BESTFIT)
-    char *best;
-     for (curr = best = heap_listp; GET_SIZE(HDRP(curr)) != 0; curr = NEXT_BLOCK(curr))
-        if (!GET_ALLOC(HDRP(curr)) && (GET_SIZE(HDRP(curr)) >= size))
-        {
-            if (GET_SIZE(HDRP(best)) < GET_SIZE(HDRP(curr)))
-            {
-                best = curr;
-            }
-        }
+    while (curr != tail)
+    {
+        if (GET_SIZE(HDRP(curr)) >= size) return curr;
 
-    if (best == heap_listp) return NULL;
-    return best; 
-#else
-    /* first hit */
-    for (curr = heap_listp; GET_SIZE(HDRP(curr)) != 0; curr = NEXT_BLOCK(curr))
-        if (!GET_ALLOC(HDRP(curr)) && (GET_SIZE(HDRP(curr)) >= size))
-            return curr;
- 
+        curr = NEXT_NODE(curr);
+    }
 
-#endif
-    
     return NULL; /* failed to find a fit block */
 }
 /* suppose that we have found an appropriate block to allocate, and split it if possible */
@@ -182,21 +197,25 @@ static void place(void* bp, size_t asize)
     size_t size = GET_SIZE(HDRP(bp));
     if ((size - asize) >= 16) /* it can be split */
     {
+        remove_node(bp);
         PUT(HDRP(bp), PACK(asize, 1));
         PUT(FTRP(bp), PACK(asize, 1));
         bp = NEXT_BLOCK(bp); /* base pointer to new split free block */
         PUT(HDRP(bp) , PACK(size - asize, 0));
         PUT(FTRP(bp), PACK(size - asize, 0));
+        insert_node(bp);
         //coalesce(bp);
     }
     else /* can not be split */
     {
         /* the size of original block can not be changed */
+        remove_node(bp);
         PUT(HDRP(bp), PACK(size, 1));
         PUT(FTRP(bp), PACK(size, 1));
     }
 }
 /***********************************************************************/
+
 /* 
  * mm_init - initialize the malloc package.
  */
@@ -207,8 +226,16 @@ int mm_init(void)
         This is, total are 3 words (12 bytes).
         Since the heap must be 8-byte aligned, there is a word for padding.
     */
-    if ((heap_listp = mem_sbrk(4 * WSIZE)) == (void*)-1)
+    /*
+        allocate 32 bytes, 16 bytes of which are for head and tail.
+    */
+    if ((head = mem_sbrk(8 * WSIZE)) == (void*)-1)
         return -1;
+    tail = head + 8;
+    SET_PREV(head, 0), SET_NEXT(head, tail);
+    SET_PREV(tail, head), SET_NEXT(tail, 0);
+
+    heap_listp = tail + 8;
     PUT(heap_listp, 0); /* the firt word is padding */
     PUT(heap_listp + WSIZE, PACK(0x8, 1)); /* initialize the header of prologue */
     PUT(heap_listp + DSIZE, PACK(0x8, 1)); /* initialize the footer of prologue */
@@ -219,6 +246,10 @@ int mm_init(void)
         rover = heap_listp;
     #endif
 
+    /*
+        we don't need to insert a node after the call of exten_heap,
+        since 
+     */
     if (extend_heap(CHUNSIZE / WSIZE) == NULL) return -1;
     return 0;
 }
@@ -258,6 +289,7 @@ void mm_free(void *ptr)
     size_t size = GET_SIZE(HDRP(ptr));
     PUT(HDRP(ptr), PACK(size, 0));
     PUT(FTRP(ptr), PACK(size, 0));
+    insert_node(ptr);
     coalesce(ptr);
 }
 
@@ -316,6 +348,7 @@ void *mm_realloc(void *ptr, size_t size)
             /* copy data, NOTE: there are overlapped area, if we used memcpy  */
             //for (i = ptr, j = prevbp; i != FTRP(ptr); ++i, ++j)
             //    *j = *i;
+            remove_node(prevbp);
             memcpy(prevbp, ptr, currsize - DSIZE);
             /* check whether the coalesced block can be split */
             //place(prevbp, prevsize + currsize);
@@ -329,10 +362,10 @@ void *mm_realloc(void *ptr, size_t size)
                 In this case, we can coalesce the current block with the next one
                 NOTE: we don't need to copy any data
             */
-             PUT(HDRP(ptr), PACK(nextsize + currsize, 1));
-             PUT(FTRP(ptr), PACK(nextsize + currsize, 1));
-
-             return ptr;
+            PUT(HDRP(ptr), PACK(nextsize + currsize, 1));
+            PUT(FTRP(ptr), PACK(nextsize + currsize, 1));
+            remove_node(nextbp); 
+            return ptr;
         }
         else if ((!prevalloc && !nextalloc) && ((prevsize + currsize + nextsize) >= asize))
         {
@@ -345,8 +378,10 @@ void *mm_realloc(void *ptr, size_t size)
             PUT(FTRP(prevbp), PACK(prevsize + currsize + nextsize, 1));
             //for (i = ptr, j = prevbp; i != FTRP(ptr); ++i, ++j)
            //     *j = *i;
-           memcpy(prevbp, ptr, currsize - DSIZE);
-        
+
+            memcpy(prevbp, ptr, currsize - DSIZE);
+            remove(prevbp);
+            remove(nextbp);
             //place(prevbp, prevsize + currsize + nextsize); 
             return prevbp;
         }
