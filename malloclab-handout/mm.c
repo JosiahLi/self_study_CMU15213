@@ -35,6 +35,8 @@ team_t team = {
     ""
 };
 
+/* find policy */
+#define NEXTFIT
 /* single word (4) or double word (8) alignment */
 #define ALIGNMENT 8
 
@@ -48,6 +50,9 @@ team_t team = {
 /*************************************************************/
 /* Below are private global rariables for implicit free list*/
 static char *heap_listp; // point to the footer of prologue block
+#ifdef NEXTFIT
+static char *rover;
+#endif
 /* Below are macros for implicit free list*/
 #define WSIZE 4
 #define DSIZE 8
@@ -102,6 +107,10 @@ static void *coalesce(void *bp)
         PUT(FTRP(bp), PACK(size, 0));
     }
 
+#ifdef NEXTFIT
+    /* rover might be coalesced, so we musr check whether rover points to an legal address */
+    if ((char*)bp < rover && rover < NEXT_BLOCK(bp)) rover = bp;
+#endif
     return bp;
 }
 /* extend the heap by words */
@@ -123,10 +132,29 @@ static void *extend_heap(size_t words)
 /* find an appropriate block that satisfies the block size */
 static void *find_fit(size_t size)
 {
+    char *curr;
+#ifdef NEXTFIT
+    for (curr = rover; GET_SIZE(HDRP(curr)) != 0; curr = NEXT_BLOCK(curr))
+        if (!GET_ALLOC(HDRP(curr)) && (GET_SIZE(HDRP(curr)) >= size))
+        {
+            rover = NEXT_BLOCK(curr);
+            return curr;
+        }
+
+    for (curr = heap_listp; curr != rover; curr = NEXT_BLOCK(curr))
+        if (!GET_ALLOC(HDRP(curr)) && (GET_SIZE(HDRP(curr)) >= size))
+        {
+            rover = NEXT_BLOCK(curr);
+            return curr;
+        }
+#else
     /* first hit */
-    for (char *curr = heap_listp; GET_SIZE(HDRP(curr)) != 0; curr = NEXT_BLOCK(curr))
+    for (curr = heap_listp; GET_SIZE(HDRP(curr)) != 0; curr = NEXT_BLOCK(curr))
         if (!GET_ALLOC(HDRP(curr)) && (GET_SIZE(HDRP(curr)) >= size))
             return curr;
+ 
+
+#endif
     
     return NULL; /* failed to find a fit block */
 }
@@ -173,7 +201,11 @@ int mm_init(void)
     PUT(heap_listp + (3 * WSIZE), PACK(0x0, 1)); /* initialize epilgue */
 
     heap_listp += DSIZE; /* let heap_listp point to the footer of prologue */
+    #ifdef NEXTFIT
+        rover = heap_listp;
+    #endif
 
+    if (extend_heap(CHUNSIZE / WSIZE) == NULL) return -1;
     return 0;
 }
 
@@ -192,6 +224,7 @@ void *mm_malloc(size_t size)
     if (size <= DSIZE) asize = DSIZE * 2; /* allocate a minimum block of 16 bytes */
     else asize = ALIGN(size + DSIZE); /* align the size NOTE: not forget to plus size for header and footer */
 
+    
     if ((bp = find_fit(asize)) != NULL) place(bp, asize);
     else /* did not find an appropriate block */
     {
