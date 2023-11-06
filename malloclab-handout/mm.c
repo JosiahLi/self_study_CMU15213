@@ -36,7 +36,7 @@ team_t team = {
 };
 
 /* find policy */
-#define NEXTFIT
+//#define NEXTFIT
 //#define BESTFIT
 /* single word (4) or double word (8) alignment */
 #define ALIGNMENT 8
@@ -84,7 +84,7 @@ static char *rover;
 /*
     insert a node at the beginning of the free list
 */
-static void insert_node(char *curr)
+inline static void insert_node(char *curr)
 {
     SET_PREV(curr, head);
     SET_NEXT(curr, NEXT_NODE(head));
@@ -95,14 +95,16 @@ static void insert_node(char *curr)
 /*
     delete a node from the free list
 */
-static void remove_node(char *curr)
+inline static void remove_node(char *curr)
 {
+#if defined(NEXTFIT)
     if (curr == rover) rover = NEXT_NODE(curr);
+#endif
     SET_NEXT(PREV_NODE(curr), NEXT_NODE(curr));
     SET_PREV(NEXT_NODE(curr), PREV_NODE(curr));
 }
 /* coalesce blocks */
-static void *coalesce(void *bp)
+inline static void *coalesce(void *bp)
 {
     void *next_block = NEXT_BLOCK(bp);
     size_t prev_alloc = GET_ALLOC(HDRP(PREV_BLOCK(bp)));
@@ -154,7 +156,7 @@ static void *coalesce(void *bp)
     return bp;
 }
 /* extend the heap by words */
-static void *extend_heap(size_t words)
+inline static void *extend_heap(size_t words)
 {
     char *bp;
     size_t size;
@@ -172,8 +174,9 @@ static void *extend_heap(size_t words)
     return coalesce(bp);
 }
 /* find an appropriate block that satisfies the block size */
-static void *find_fit(size_t size)
+inline static void *find_fit(size_t size)
 {
+#if defined(NEXTFIT)
     void *curr = rover;
      
     while (curr != tail)
@@ -198,10 +201,30 @@ static void *find_fit(size_t size)
 
         curr  = NEXT_NODE(curr);
     }
+#endif
+    void *curr = NEXT_NODE(head);
+    void *res = NULL;
+    size_t  min = 20 * (1 << 20);
+    while (curr != tail)
+    {
+        if (GET_SIZE(HDRP(curr)) >= size)
+        {
+            if (GET_SIZE(HDRP(curr)) < min)
+            {
+                min = GET_SIZE(HDRP(curr));
+                res = curr;
+            }
+        }
+
+        curr = NEXT_NODE(curr);
+    }
+
+    if (res) return res;    
+    
     return NULL; /* failed to find a fit block */
 }
 /* suppose that we have found an appropriate block to allocate, and split it if possible */
-static void place(void* bp, size_t asize)
+inline static void place(void* bp, size_t asize)
 {
     /* 
         Since both asize and the block size to which bp points to are multiples of 8,
@@ -232,7 +255,7 @@ static void place(void* bp, size_t asize)
 /* 
  * mm_init - initialize the malloc package.
  */
-int mm_init(void)
+inline int mm_init(void)
 {
     /*
         we need a prologue and a epilogue which are , respectively, 2 words and 1 word.
@@ -271,7 +294,7 @@ int mm_init(void)
  * mm_malloc - Allocate a block by incrementing the brk pointer.
  *     Always allocate a block whose size is a multiple of the alignment.
  */
-void *mm_malloc(size_t size)
+inline void *mm_malloc(size_t size)
 {
     size_t asize; /* aligned size */
     size_t extendsize; /* extended size if no fit */
@@ -295,7 +318,7 @@ void *mm_malloc(size_t size)
 /*
  * mm_free - Freeing a block does nothing.
  */
-void mm_free(void *ptr)
+inline void mm_free(void *ptr)
 {
     if (ptr == NULL) return;
     size_t size = GET_SIZE(HDRP(ptr));
@@ -308,7 +331,7 @@ void mm_free(void *ptr)
 /*
  * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
  */
-void *mm_realloc(void *ptr, size_t size)
+inline void *mm_realloc(void *ptr, size_t size)
 {
     void *oldptr = ptr;
     void *newptr;
