@@ -36,8 +36,8 @@ team_t team = {
 };
 
 /* find policy */
-//#define NEXTFIT
-#define BESTFIT
+#define NEXTFIT
+//#define BESTFIT
 /* single word (4) or double word (8) alignment */
 #define ALIGNMENT 8
 
@@ -86,10 +86,6 @@ static char *rover;
 */
 static void insert_node(char *curr)
 {
-    if (GET_ALLOC(HDRP(curr)))
-    {
-        printf("ERROR: insert a allocated block\n");
-    }
     SET_PREV(curr, head);
     SET_NEXT(curr, NEXT_NODE(head));
 
@@ -101,6 +97,7 @@ static void insert_node(char *curr)
 */
 static void remove_node(char *curr)
 {
+    if (curr == rover) rover = NEXT_NODE(curr);
     SET_NEXT(PREV_NODE(curr), NEXT_NODE(curr));
     SET_PREV(NEXT_NODE(curr), PREV_NODE(curr));
 }
@@ -153,6 +150,7 @@ static void *coalesce(void *bp)
     /* rover might be coalesced, so we musr check whether rover points to an legal address */
     if ((char*)bp < rover && rover < NEXT_BLOCK(bp)) rover = bp;
 #endif
+    
     return bp;
 }
 /* extend the heap by words */
@@ -176,15 +174,30 @@ static void *extend_heap(size_t words)
 /* find an appropriate block that satisfies the block size */
 static void *find_fit(size_t size)
 {
-    void *curr = NEXT_NODE(head);
-
+    void *curr = rover;
+     
     while (curr != tail)
     {
-        if (GET_SIZE(HDRP(curr)) >= size) return curr;
+        if (GET_SIZE(HDRP(curr)) >= size)
+        {
+            rover = NEXT_NODE(curr);
+            return curr;
+        } 
 
         curr = NEXT_NODE(curr);
     }
 
+    curr = NEXT_NODE(head);
+    while (curr != rover)
+    {
+        if (GET_SIZE(HDRP(curr)) >= size)
+        {
+            rover = NEXT_NODE(curr);
+            return curr;
+        } 
+
+        curr  = NEXT_NODE(curr);
+    }
     return NULL; /* failed to find a fit block */
 }
 /* suppose that we have found an appropriate block to allocate, and split it if possible */
@@ -243,7 +256,7 @@ int mm_init(void)
 
     heap_listp += DSIZE; /* let heap_listp point to the footer of prologue */
     #ifdef NEXTFIT
-        rover = heap_listp;
+        rover = tail;
     #endif
 
     /*
@@ -269,7 +282,6 @@ void *mm_malloc(size_t size)
     if (size <= DSIZE) asize = DSIZE * 2; /* allocate a minimum block of 16 bytes */
     else asize = ALIGN(size + DSIZE); /* align the size NOTE: not forget to plus size for header and footer */
 
-    
     if ((bp = find_fit(asize)) != NULL) place(bp, asize);
     else /* did not find an appropriate block */
     {
